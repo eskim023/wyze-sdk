@@ -6,6 +6,7 @@
     <title>Wyze Light Control</title>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body {
             background-color: black;
@@ -109,11 +110,79 @@
         .card-overlay.active {
             display: flex;
         }
+        .device-selector-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 50;
+        }
+        
+        .device-selector-modal.active {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background: #1a1a1a;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #deviceList {
+            overflow-y: auto;
+            flex-grow: 1;
+            margin: 1rem 0;
+            padding-right: 1rem;
+        }
+        
+        #deviceList::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #deviceList::-webkit-scrollbar-track {
+            background: #2a2a2a;
+            border-radius: 4px;
+        }
+        
+        #deviceList::-webkit-scrollbar-thumb {
+            background: #4a4a4a;
+            border-radius: 4px;
+        }
+        
+        #deviceList::-webkit-scrollbar-thumb:hover {
+            background: #5a5a5a;
+        }
+        
+        .device-list-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid #333;
+        }
+        
+        .device-list-item:last-child {
+            border-bottom: none;
+        }
     </style>
 </head>
 <body class="bg-black min-h-screen">
     <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold mb-8 text-white text-center">Wyze Light Control</h1>
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-white">Wyze Light Control</h1>
+            <button onclick="toggleDeviceSelector()" class="text-white hover:text-gray-300">
+                <i class="fas fa-cog text-2xl"></i>
+            </button>
+        </div>
         
         {% if error %}
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
@@ -122,7 +191,7 @@
         </div>
         {% endif %}
 
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 justify-items-center">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 justify-items-center" id="bulbs-grid">
             {% for bulb in bulbs %}
             <div class="bulb-card rounded-lg shadow-md p-6 relative" data-bulb-mac="{{ bulb.mac }}">
                 <div class="card-overlay" data-card-overlay="{{ bulb.mac }}">
@@ -145,6 +214,29 @@
                 >
             </div>
             {% endfor %}
+        </div>
+    </div>
+
+    <!-- Add Device Selector Modal -->
+    <div class="device-selector-modal" id="deviceSelector">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-white">Select Visible Devices</h2>
+                <button onclick="toggleDeviceSelector()" class="text-white hover:text-gray-300">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="deviceList" class="space-y-2">
+                <!-- Device list will be populated dynamically -->
+            </div>
+            <div class="mt-4 flex justify-end space-x-2">
+                <button onclick="selectAllDevices()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    Select All
+                </button>
+                <button onclick="saveDeviceSelection()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    Save
+                </button>
+            </div>
         </div>
     </div>
 
@@ -248,6 +340,7 @@
 
         // Get status when page loads
         $(document).ready(function() {
+            initializeVisibleDevices();
             getInitialStatus();
         });
 
@@ -286,6 +379,63 @@
                     slider.prop('disabled', false);
                 }
             });
+        }
+
+        const STORAGE_KEY = 'wyze_visible_devices';
+
+        function initializeVisibleDevices() {
+            if (!localStorage.getItem(STORAGE_KEY)) {
+                // Get all device MACs and store them as visible
+                const allDevices = Array.from($('[data-bulb-mac]')).map(el => $(el).data('bulb-mac'));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(allDevices));
+            }
+            updateVisibleDevices();
+        }
+
+        function updateVisibleDevices() {
+            const visibleDevices = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            $('.bulb-card').each(function() {
+                const mac = $(this).data('bulb-mac');
+                $(this).toggle(visibleDevices.includes(mac));
+            });
+        }
+
+        function toggleDeviceSelector() {
+            const modal = $('#deviceSelector');
+            if (!modal.hasClass('active')) {
+                // Populate device list when opening
+                const visibleDevices = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                const deviceList = $('#deviceList');
+                deviceList.empty();
+                
+                $('.bulb-card').each(function() {
+                    const mac = $(this).data('bulb-mac');
+                    const name = $(this).find('h2').text();
+                    const isChecked = visibleDevices.includes(mac);
+                    
+                    deviceList.append(`
+                        <div class="device-list-item">
+                            <input type="checkbox" id="device-${mac}" 
+                                   data-mac="${mac}" 
+                                   ${isChecked ? 'checked' : ''}
+                                   class="mr-2">
+                            <label for="device-${mac}" class="text-white">${name}</label>
+                        </div>
+                    `);
+                });
+            }
+            modal.toggleClass('active');
+        }
+
+        function selectAllDevices() {
+            $('#deviceList input[type="checkbox"]').prop('checked', true);
+        }
+
+        function saveDeviceSelection() {
+            const selectedDevices = Array.from($('#deviceList input:checked')).map(el => $(el).data('mac'));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedDevices));
+            updateVisibleDevices();
+            toggleDeviceSelector();
         }
     </script>
 </body>
