@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wyze Light Control</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: black;
+            color: white;
+        }
+        .bulb-card {
+            background-color: #1a1a1a;
+            border: 1px solid #333;
+            width: 150px;
+            height: 300px;
+            position: relative;
+            transition: background-color 0.3s ease;
+            cursor: pointer;
+        }
+        .bulb-card.on {
+            background-color: rgba(34, 197, 94, 0.5);
+        }
+        .bulb-card:hover {
+            background-color: #2a2a2a;
+        }
+        .bulb-card.on:hover {
+            background-color: rgba(34, 197, 94, 0.6);
+        }
+        .brightness-slider {
+            position: absolute;
+            right: 20px;
+            top: 25%;
+            transform: translateY(-50%) rotate(-90deg);
+            transform-origin: right;
+            width: 200px;
+            height: 20px;
+            margin-right: 10px;
+            -webkit-appearance: none;
+            background: #333;
+            border-radius: 10px;
+            outline: none;
+        }
+        .brightness-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 30px;
+            height: 30px;
+            background: white;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .brightness-slider::-moz-range-thumb {
+            width: 30px;
+            height: 30px;
+            background: white;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        .status-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 0.75rem;
+        }
+        .slider-overlay {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 40px;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        .slider-overlay.active {
+            display: flex;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-black min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8 text-white text-center">Wyze Light Control</h1>
+        
+        {% if error %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <strong class="font-bold">Error:</strong>
+            <span class="block sm:inline">{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 justify-items-center">
+            {% for bulb in bulbs %}
+            <div class="bulb-card rounded-lg shadow-md p-6" data-bulb-mac="{{ bulb.mac }}">
+                <span class="status-indicator" data-mac="{{ bulb.mac }}">Loading...</span>
+                <h2 class="text-xl font-semibold text-white mb-4">{{ bulb.name }}</h2>
+                <div class="slider-overlay" data-slider-overlay="{{ bulb.mac }}">
+                    <div class="spinner"></div>
+                </div>
+                <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    class="brightness-slider"
+                    onchange="setBrightness('{{ bulb.mac }}', this.value)"
+                    data-brightness-slider="{{ bulb.mac }}"
+                    disabled
+                    onclick="event.stopPropagation()"
+                >
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        // Update click handler for the entire card
+        $('.bulb-card').on('click', function(e) {
+            // Don't toggle if clicking the slider
+            if (!$(e.target).hasClass('brightness-slider')) {
+                const mac = $(this).data('bulb-mac');
+                toggleBulb(mac);
+            }
+        });
+
+        // Update updateBulbState to handle the new UI
+        function updateBulbState(mac, isOnline, isOn, brightness) {
+            const card = $(`.bulb-card[data-bulb-mac="${mac}"]`);
+            const statusIndicator = $(`.status-indicator[data-mac="${mac}"]`);
+            const slider = $(`input[data-brightness-slider="${mac}"]`);
+            
+            // Update status indicator
+            statusIndicator.text(isOnline ? 'Online' : 'Offline')
+                         .removeClass('text-gray-500 text-green-500 text-red-500')
+                         .addClass(isOnline ? 'text-green-500' : 'text-red-500');
+            
+            if (isOnline) {
+                card.removeClass('pointer-events-none');
+                if (isOn) {
+                    card.addClass('on');
+                } else {
+                    card.removeClass('on');
+                }
+                
+                // Update brightness slider
+                slider.prop('disabled', false);
+                if (typeof brightness === 'number') {
+                    slider.val(brightness);
+                }
+            } else {
+                card.addClass('pointer-events-none')
+                    .removeClass('on');
+                slider.prop('disabled', true);
+            }
+        }
+
+        // Function to toggle bulb state
+        function toggleBulb(mac) {
+            const button = $(`button[data-bulb-mac="${mac}"]`);
+            button.prop('disabled', true).text('Updating...');
+            
+            $.ajax({
+                url: `/toggle/${mac}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.success) {
+                        updateBulbState(mac, true, response.is_on);
+                    } else {
+                        alert('Error: ' + response.error);
+                    }
+                },
+                error: function() {
+                    alert('Failed to toggle bulb state');
+                }
+            });
+        }
+
+        // Function to get status for a single bulb
+        function getBulbStatus(mac) {
+            $.ajax({
+                url: `/status/${mac}`,
+                method: 'GET',
+                success: function(response) {
+                    if (response.success) {
+                        updateBulbState(mac, response.is_online, response.is_on, response.brightness);
+                    } else {
+                        console.error('Failed to get status for bulb:', mac, response.error);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error getting status for bulb:', mac, error);
+                }
+            });
+        }
+
+        // Function to get initial status for all bulbs     
+        function getInitialStatus() {
+            // Get all bulb MACs and request status for each one
+            $('[data-bulb-mac]').each(function() {
+                const mac = $(this).data('bulb-mac');
+                getBulbStatus(mac);
+            });
+        }
+
+        // Get status when page loads
+        $(document).ready(function() {
+            getInitialStatus();
+        });
+
+        // Update setBrightness function to handle the overlay
+        function setBrightness(mac, brightness) {
+            const slider = $(`input[data-brightness-slider="${mac}"]`);
+            const overlay = $(`.slider-overlay[data-slider-overlay="${mac}"]`);
+            
+            // Show overlay
+            overlay.addClass('active');
+            slider.prop('disabled', true);
+            
+            $.ajax({
+                url: `/brightness/${mac}`,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ brightness: parseInt(brightness) }),
+                success: function(response) {
+                    if (response.success) {
+                        // Keep the current on/off state
+                        const card = $(`.bulb-card[data-bulb-mac="${mac}"]`);
+                        const wasOn = card.hasClass('on');
+                        updateBulbState(mac, true, wasOn, brightness);
+                    } else {
+                        alert('Error: ' + response.error);
+                        getBulbStatus(mac);
+                    }
+                },
+                error: function() {
+                    alert('Failed to set brightness');
+                    getBulbStatus(mac);
+                },
+                complete: function() {
+                    // Hide overlay and re-enable slider
+                    overlay.removeClass('active');
+                    slider.prop('disabled', false);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
