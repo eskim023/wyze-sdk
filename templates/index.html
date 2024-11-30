@@ -93,6 +93,22 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .card-overlay {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            border-radius: 0.5rem;  /* matches the card's rounded-lg */
+        }
+        .card-overlay.active {
+            display: flex;
+        }
     </style>
 </head>
 <body class="bg-black min-h-screen">
@@ -108,7 +124,10 @@
 
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 justify-items-center">
             {% for bulb in bulbs %}
-            <div class="bulb-card rounded-lg shadow-md p-6" data-bulb-mac="{{ bulb.mac }}">
+            <div class="bulb-card rounded-lg shadow-md p-6 relative" data-bulb-mac="{{ bulb.mac }}">
+                <div class="card-overlay" data-card-overlay="{{ bulb.mac }}">
+                    <div class="spinner"></div>
+                </div>
                 <span class="status-indicator" data-mac="{{ bulb.mac }}">Loading...</span>
                 <h2 class="text-xl font-semibold text-white mb-4">{{ bulb.name }}</h2>
                 <div class="slider-overlay" data-slider-overlay="{{ bulb.mac }}">
@@ -172,8 +191,12 @@
 
         // Function to toggle bulb state
         function toggleBulb(mac) {
-            const button = $(`button[data-bulb-mac="${mac}"]`);
-            button.prop('disabled', true).text('Updating...');
+            const card = $(`.bulb-card[data-bulb-mac="${mac}"]`);
+            const overlay = $(`.card-overlay[data-card-overlay="${mac}"]`);
+            
+            // Show overlay
+            overlay.addClass('active');
+            card.addClass('pointer-events-none');
             
             $.ajax({
                 url: `/toggle/${mac}`,
@@ -187,6 +210,11 @@
                 },
                 error: function() {
                     alert('Failed to toggle bulb state');
+                },
+                complete: function() {
+                    // Hide overlay and re-enable interactions
+                    overlay.removeClass('active');
+                    card.removeClass('pointer-events-none');
                 }
             });
         }
